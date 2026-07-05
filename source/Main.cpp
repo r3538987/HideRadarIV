@@ -1,4 +1,5 @@
 #include <plugin.h>
+#include <CCutsceneMgr.h>
 #include <CPad.h>
 #include <CPlayerInfo.h>
 #include <CTimer.h>
@@ -27,6 +28,7 @@ struct Main {
     float m_maxHealth = 0.0f;
     float m_healthPercent = 0.0f;
     bool m_playerFound = false;
+    bool m_cutsceneRunning = false;
     bool m_radarHidden = false;
     bool m_showLowHealthHint = false;
     bool m_toggleKeyWasDown = false;
@@ -129,11 +131,19 @@ struct Main {
         if (!m_showLowHealthHint)
             return;
 
+        // Text rendering state is global. Cutscenes can leave alignment and
+        // shadow settings behind, so reset them before applying our style.
+        Command<void, Commands::SET_TEXT_BACKGROUND>(false);
+        Command<void, Commands::SET_TEXT_CENTRE>(false);
+        Command<void, Commands::SET_TEXT_RIGHT_JUSTIFY>(false);
+        Command<void, Commands::SET_TEXT_DROPSHADOW>(0, 0, 0, 0, 0);
+        Command<void, Commands::SET_TEXT_EDGE>(0, 0, 0, 0, 0);
+
         Command<void, Commands::SET_TEXT_SCALE>(0.20f, 0.36f);
         Command<void, Commands::SET_TEXT_COLOUR>(150, 30, 30, 235);
         Command<void, Commands::SET_TEXT_FONT>(0);
         Command<void, Commands::SET_TEXT_PROPORTIONAL>(true);
-        Command<void, Commands::SET_TEXT_EDGE>(2, 0, 0, 0, 255);
+        Command<void, Commands::SET_TEXT_EDGE>(1, 0, 0, 0, 255);
         Command<void, Commands::DISPLAY_TEXT_WITH_LITERAL_STRING>(
             0.015f,
             0.95f,
@@ -159,6 +169,7 @@ struct Main {
             << " dynamic=" << m_dynamicRadar
             << " threshold=" << m_healthThreshold
             << " low=" << m_showLowHealthHint
+            << " cutscene=" << m_cutsceneRunning
             << " radarHidden=" << m_radarHidden
             << '\n';
     }
@@ -177,8 +188,10 @@ struct Main {
         m_toggleKeyWasDown = toggleKeyIsDown;
 
         const bool playerLowOnHealth = IsPlayerLowOnHealth();
+        m_cutsceneRunning = CCutsceneMgr::IsRunning();
         m_showLowHealthHint =
-            m_dynamicRadar && m_radarHidden && playerLowOnHealth;
+            m_dynamicRadar && m_radarHidden && playerLowOnHealth &&
+            !m_cutsceneRunning;
         WriteDebugLog();
         DrawLowHealthWarning();
 
