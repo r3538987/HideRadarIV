@@ -68,14 +68,15 @@ Common button IDs:
 
 ### Dynamic
 
-Controls the low-health warning.
+Controls the dynamic text shown while the radar is hidden.
 
 - `0`: disabled
-- `1`: enabled
+- `1`: show `WarningText` below `HealthThreshold`
+- `2`: show the player's current HP below `HealthThreshold`
 
-The warning appears only when dynamic mode is enabled, the radar is hidden,
-and player health is below `HealthThreshold`. Dynamic mode does not make the
-radar visible.
+Dynamic text appears only while the radar is hidden and the game is not
+suppressing the HUD for a cutscene or cinematic sequence. Dynamic mode does
+not make the radar visible.
 
 ### HealthThreshold
 
