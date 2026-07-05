@@ -1,5 +1,6 @@
 #include <plugin.h>
 #include <CCutsceneMgr.h>
+#include <CHud.h>
 #include <CPad.h>
 #include <CPlayerInfo.h>
 #include <CTimer.h>
@@ -7,6 +8,7 @@
 #include <extensions/Config.h>
 #include <extensions/ScriptCommands.h>
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -20,7 +22,7 @@ struct Main {
     config_file m_config{ true, false };
     int m_keyboardKey = 'I';
     int m_gamepadButton = BUTTON_DPAD_DOWN;
-    bool m_dynamicRadar = false;
+    int m_dynamicMode = 0;
     bool m_debug = true;
     unsigned int m_healthThreshold = 30;
     unsigned int m_lastLogTime = 0;
@@ -29,8 +31,11 @@ struct Main {
     float m_healthPercent = 0.0f;
     bool m_playerFound = false;
     bool m_cutsceneRunning = false;
+    bool m_hudSuppressed = false;
+    bool m_widescreenBorders = false;
     bool m_radarHidden = false;
     bool m_showLowHealthHint = false;
+    bool m_showHealthValue = false;
     bool m_toggleKeyWasDown = false;
     std::string m_logPath;
     std::string m_warningText = "Low Health";
@@ -61,7 +66,7 @@ struct Main {
             saveDefaults = true;
         }
         if (dynamicRadar.isEmpty()) {
-            dynamicRadar = m_dynamicRadar;
+            dynamicRadar = m_dynamicMode;
             saveDefaults = true;
         }
         if (healthThreshold.isEmpty()) {
@@ -79,7 +84,7 @@ struct Main {
 
         m_keyboardKey = static_cast<int>(keyboardKey.asInt(m_keyboardKey));
         m_gamepadButton = static_cast<int>(gamepadButton.asInt(m_gamepadButton));
-        m_dynamicRadar = dynamicRadar.asInt(m_dynamicRadar ? 1 : 0) != 0;
+        m_dynamicMode = static_cast<int>(dynamicRadar.asInt(m_dynamicMode));
         m_healthThreshold = healthThreshold.asInt(m_healthThreshold);
         m_debug = debug.asInt(m_debug ? 1 : 0) != 0;
         m_warningText = warningText.asString(m_warningText);
@@ -88,6 +93,8 @@ struct Main {
             m_keyboardKey = 0;
         if (m_gamepadButton < 0 || m_gamepadButton > BUTTON_STICK_RIGHT)
             m_gamepadButton = -1;
+        if (m_dynamicMode < 0 || m_dynamicMode > 2)
+            m_dynamicMode = 0;
         if (m_healthThreshold > 100)
             m_healthThreshold = 100;
         if (m_warningText.empty())
@@ -127,8 +134,8 @@ struct Main {
         return m_healthPercent < static_cast<float>(m_healthThreshold);
     }
 
-    void DrawLowHealthWarning() {
-        if (!m_showLowHealthHint)
+    void DrawDynamicHint() {
+        if (!m_showLowHealthHint && !m_showHealthValue)
             return;
 
         // Text rendering state is global. Cutscenes can leave alignment and
@@ -139,6 +146,15 @@ struct Main {
         Command<void, Commands::SET_TEXT_DROPSHADOW>(0, 0, 0, 0, 0);
         Command<void, Commands::SET_TEXT_EDGE>(0, 0, 0, 0, 0);
 
+        char healthText[32];
+        const char* text = m_warningText.c_str();
+        if (m_showHealthValue) {
+            const float effectiveHealth =
+                (std::max)(0.0f, m_currentHealth - GTA_HEALTH_BASELINE);
+            sprintf_s(healthText, "HP: %.0f", effectiveHealth);
+            text = healthText;
+        }
+
         Command<void, Commands::SET_TEXT_SCALE>(0.20f, 0.36f);
         Command<void, Commands::SET_TEXT_COLOUR>(150, 30, 30, 235);
         Command<void, Commands::SET_TEXT_FONT>(0);
@@ -148,7 +164,7 @@ struct Main {
             0.015f,
             0.95f,
             "STRING",
-            m_warningText.c_str());
+            text);
     }
 
     void WriteDebugLog() {
@@ -166,10 +182,13 @@ struct Main {
             << " health=" << m_currentHealth
             << " maxHealth=" << m_maxHealth
             << " healthPercent=" << m_healthPercent
-            << " dynamic=" << m_dynamicRadar
+            << " dynamic=" << m_dynamicMode
             << " threshold=" << m_healthThreshold
             << " low=" << m_showLowHealthHint
+            << " showHealthValue=" << m_showHealthValue
             << " cutscene=" << m_cutsceneRunning
+            << " hudSuppressed=" << m_hudSuppressed
+            << " widescreenBorders=" << m_widescreenBorders
             << " radarHidden=" << m_radarHidden
             << '\n';
     }
@@ -189,11 +208,19 @@ struct Main {
 
         const bool playerLowOnHealth = IsPlayerLowOnHealth();
         m_cutsceneRunning = CCutsceneMgr::IsRunning();
+        m_hudSuppressed =
+            CHud::HideAllComponents || CHud::HideAllComponentsThisFrame;
+        m_widescreenBorders =
+            Command<bool, Commands::ARE_WIDESCREEN_BORDERS_ACTIVE>();
+        const bool canShowDynamicHint =
+            m_radarHidden && !m_cutsceneRunning && !m_hudSuppressed &&
+            !m_widescreenBorders;
         m_showLowHealthHint =
-            m_dynamicRadar && m_radarHidden && playerLowOnHealth &&
-            !m_cutsceneRunning;
+            m_dynamicMode == 1 && playerLowOnHealth && canShowDynamicHint;
+        m_showHealthValue =
+            m_dynamicMode == 2 && playerLowOnHealth && canShowDynamicHint;
         WriteDebugLog();
-        DrawLowHealthWarning();
+        DrawDynamicHint();
 
         // Missions and other scripts can enable the radar again, so enforce the
         // selected state each frame. Dynamic mode only draws the health hint.
